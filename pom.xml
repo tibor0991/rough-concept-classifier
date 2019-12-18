@@ -18,7 +18,18 @@
             <artifactId>org.semanticweb.hermit</artifactId>
             <version>1.4.3.517</version>
         </dependency>
-    </dependencies>
+        <dependency>
+            <groupId>nz.ac.waikato.cms.weka</groupId>
+            <artifactId>weka-stable</artifactId>
+            <version>3.8.3</version>
+        </dependency>
 
+
+    </dependencies>
+    <properties>
+        <!-- necessary for intellij to function -->
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+    </properties>
 
 </project>
