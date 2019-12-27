@@ -9,7 +9,7 @@ public class Main {
     public static void main(String[] args) {
         System.out.println("Hello, world!");
         RCC = new RoughConceptClassifier();
-        LoadDataSet();
+        BuildNewDataset();
 
     }
 

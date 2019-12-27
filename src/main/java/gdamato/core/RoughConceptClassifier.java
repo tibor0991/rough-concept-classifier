@@ -6,12 +6,15 @@ import org.semanticweb.owlapi.apibinding.OWLManager;
 import org.semanticweb.owlapi.model.*;
 import org.semanticweb.owlapi.reasoner.OWLReasoner;
 import org.semanticweb.owlapi.util.SimpleShortFormProvider;
-import weka.attributeSelection.PrincipalComponents;
+
 import weka.core.Attribute;
 import weka.core.DenseInstance;
+import weka.core.Instance;
 import weka.core.Instances;
 import weka.core.converters.ConverterUtils.DataSource;
 import weka.core.converters.ConverterUtils.DataSink;
+import weka.filters.Filter;
+import weka.filters.unsupervised.attribute.PrincipalComponents;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -49,10 +52,17 @@ public class RoughConceptClassifier {
         SimpleShortFormProvider sfp = new SimpleShortFormProvider();
         //Jesus Christ how awful
         Set<OWLClass> classes = onto.classesInSignature().collect(Collectors.toSet());
+        classes.removeIf(owlClass -> owlClass.isTopEntity());   //here I remove the owl:Thing class
         System.out.println("Classes in this ontology: " + classes.size());
+
+        //adding a "Name" attribute in order to pass some info to the python script
+        attributes.add(new Attribute("Name", true));
+
+        //creating an attribute for each class
         for(OWLClass c : classes) {
             attributes.add(new Attribute(sfp.getShortForm(c)));
         }
+
 
         projectionTable = new Instances("OntologyTest", attributes, 0);
 
@@ -60,16 +70,19 @@ public class RoughConceptClassifier {
         System.out.println("Individuals in this ontology: " + individuals.size());
 
         for(OWLNamedIndividual i:individuals) {
-            double bufferData[] = new double[classes.size()];
-            int idx = 0;
+            Instance currentInstance = new DenseInstance(projectionTable.numAttributes());
+            currentInstance.setDataset(projectionTable);
+            String individualName = sfp.getShortForm(i);
+            currentInstance.setValue(0, individualName);
+            int idx = 1;
             for(OWLClass c: classes) {
-                System.out.print(String.format("Computing %s(%s):",sfp.getShortForm(c),sfp.getShortForm(i)));
+                System.out.print(String.format("Computing %s(%s):",sfp.getShortForm(c), individualName));
                 ProjectionValue computedValue = computeProjectionValue(c, i);
                 System.out.println(computedValue);
-                bufferData[idx] = mapValueToNumber(computedValue);
+                currentInstance.setValue(idx, mapValueToNumber(computedValue));
                 idx++;
             }
-            projectionTable.add(new DenseInstance(1.0, bufferData));
+            projectionTable.add(currentInstance);
         }
     }
 
@@ -94,10 +107,10 @@ public class RoughConceptClassifier {
                 mapping = 1;
                 break;
             case FALSE:
-                mapping = 0;
+                mapping = -1;
                 break;
             case UNCERTAIN:
-                mapping = 0.5;
+                mapping = 0;
                 break;
         }
         return mapping;
@@ -114,11 +127,10 @@ public class RoughConceptClassifier {
 
     public void ComputePCA() throws Exception {
         PrincipalComponents pca = new PrincipalComponents();
-        pca.buildEvaluator(projectionTable);
-        for(int i = 0; i < projectionTable.numAttributes(); i++) {
+        pca.setInputFormat(projectionTable);
+        Instances newTable = Filter.useFilter(projectionTable, pca);
 
-            System.out.println(String.format("%d) Attribute: %s. Eigenvalue: %f", (i+1), projectionTable.attribute(i).name(), pca.getEigenValues()[i]));
-        }
+        System.out.println(newTable);
 
     }
 
