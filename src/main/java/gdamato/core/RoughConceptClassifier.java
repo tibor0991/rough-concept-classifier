@@ -4,7 +4,9 @@ import gdamato.types.ProjectionValue;
 import org.semanticweb.HermiT.ReasonerFactory;
 import org.semanticweb.owlapi.apibinding.OWLManager;
 import org.semanticweb.owlapi.model.*;
+import org.semanticweb.owlapi.model.parameters.Imports;
 import org.semanticweb.owlapi.reasoner.OWLReasoner;
+import org.semanticweb.owlapi.util.QNameShortFormProvider;
 import org.semanticweb.owlapi.util.SimpleShortFormProvider;
 
 import weka.core.Attribute;
@@ -49,17 +51,18 @@ public class RoughConceptClassifier {
 
     public void BuildProjectionTable() {
         ArrayList<Attribute> attributes = new ArrayList<>();
-        SimpleShortFormProvider sfp = new SimpleShortFormProvider();
+        QNameShortFormProvider sfp = new QNameShortFormProvider();
         //Jesus Christ how awful
-        Set<OWLClass> classes = onto.classesInSignature().collect(Collectors.toSet());
+        Set<OWLClass> classes = onto.classesInSignature(Imports.INCLUDED).collect(Collectors.toSet());
         classes.removeIf(owlClass -> owlClass.isTopEntity());   //here I remove the owl:Thing class
-        System.out.println("Classes in this ontology: " + classes.size());
+        System.out.println("Classes in this ontology (" + classes.size()+") :");
 
         //adding a "Name" attribute in order to pass some info to the python script
         attributes.add(new Attribute("Name", true));
 
         //creating an attribute for each class
         for(OWLClass c : classes) {
+            System.out.println(" -" + sfp.getShortForm(c));
             attributes.add(new Attribute(sfp.getShortForm(c)));
         }
 
@@ -69,6 +72,7 @@ public class RoughConceptClassifier {
         Set<OWLNamedIndividual> individuals = onto.individualsInSignature().collect(Collectors.toSet());
         System.out.println("Individuals in this ontology: " + individuals.size());
 
+        int count = 0;
         for(OWLNamedIndividual i:individuals) {
             Instance currentInstance = new DenseInstance(projectionTable.numAttributes());
             currentInstance.setDataset(projectionTable);
@@ -76,13 +80,14 @@ public class RoughConceptClassifier {
             currentInstance.setValue(0, individualName);
             int idx = 1;
             for(OWLClass c: classes) {
-                System.out.print(String.format("Computing %s(%s):",sfp.getShortForm(c), individualName));
+                //System.out.print(String.format("Computing %s(%s):",sfp.getShortForm(c), individualName));
                 ProjectionValue computedValue = computeProjectionValue(c, i);
-                System.out.println(computedValue);
+                //System.out.println(computedValue);
                 currentInstance.setValue(idx, mapValueToNumber(computedValue));
                 idx++;
             }
             projectionTable.add(currentInstance);
+            System.out.println(String.format("%d/%d done.", ++count, individuals.size()));
         }
     }
 
