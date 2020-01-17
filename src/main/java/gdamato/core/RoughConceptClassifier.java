@@ -1,41 +1,45 @@
 package gdamato.core;
 
+import com.google.common.base.Stopwatch;
+import com.google.common.collect.ArrayTable;
+import com.google.common.collect.RowSortedTable;
+import com.google.common.collect.Table;
 import gdamato.types.ProjectionValue;
 import org.semanticweb.HermiT.ReasonerFactory;
 import org.semanticweb.owlapi.apibinding.OWLManager;
 import org.semanticweb.owlapi.model.*;
 import org.semanticweb.owlapi.model.parameters.Imports;
+import org.semanticweb.owlapi.reasoner.NodeSet;
 import org.semanticweb.owlapi.reasoner.OWLReasoner;
 import org.semanticweb.owlapi.util.QNameShortFormProvider;
 import org.semanticweb.owlapi.util.SimpleShortFormProvider;
 
-import weka.core.Attribute;
-import weka.core.DenseInstance;
-import weka.core.Instance;
-import weka.core.Instances;
-import weka.core.converters.ConverterUtils.DataSource;
-import weka.core.converters.ConverterUtils.DataSink;
-import weka.filters.Filter;
-import weka.filters.unsupervised.attribute.PrincipalComponents;
 
+import javax.annotation.Nullable;
+import java.io.BufferedWriter;
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Set;
+import java.io.FileWriter;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class RoughConceptClassifier {
 
 
-    //Ontology stuff
-
+    //Ontology
     private OWLOntologyManager ontMgr;
     private OWLOntology onto;
     private OWLReasoner reasoner;
     private OWLDataFactory dataFactory;
 
-    //Projection stuff
-    private Instances projectionTable;
+    private List<OWLClass> classes;
+    private List<String> classNames;
+    private List<OWLNamedIndividual> individuals;
+    private List<String> individualNames;
+
+    //Projection
+    private Table<String, String, ProjectionValue> projectionTable;
+
 
 
     public RoughConceptClassifier() {
@@ -46,97 +50,99 @@ public class RoughConceptClassifier {
         onto = ontMgr.loadOntologyFromOntologyDocument(new File(path_to));
         reasoner = new ReasonerFactory().createReasoner(onto);
         dataFactory = ontMgr.getOWLDataFactory();
+
+        reasoner.isConsistent();
     }
 
-
     public void BuildProjectionTable() {
-        ArrayList<Attribute> attributes = new ArrayList<>();
         QNameShortFormProvider sfp = new QNameShortFormProvider();
-        //Jesus Christ how awful
-        Set<OWLClass> classes = onto.classesInSignature(Imports.INCLUDED).collect(Collectors.toSet());
+        Stopwatch buildTimer = Stopwatch.createStarted();
+        //Retrieve list of classes defined in the ontology
+        classes = onto.classesInSignature(Imports.INCLUDED).collect(Collectors.toList());
         classes.removeIf(owlClass -> owlClass.isTopEntity());   //here I remove the owl:Thing class
         System.out.println("Classes in this ontology (" + classes.size()+") :");
 
-        //adding a "Name" attribute in order to pass some info to the python script
-        attributes.add(new Attribute("Name", true));
+        classNames = new ArrayList<>();
 
-        //creating an attribute for each class
+        //Create an header for each class
         for(OWLClass c : classes) {
-            System.out.println(" -" + sfp.getShortForm(c));
-            attributes.add(new Attribute(sfp.getShortForm(c)));
+            String shortName = sfp.getShortForm(c);
+            System.out.println(" -" + shortName);
+            classNames.add(shortName);
         }
 
-
-        projectionTable = new Instances("OntologyTest", attributes, 0);
-
-        Set<OWLNamedIndividual> individuals = onto.individualsInSignature().collect(Collectors.toSet());
+        //Retrieve the individuals in the ontology
+        individuals = onto.individualsInSignature().collect(Collectors.toList());
         System.out.println("Individuals in this ontology: " + individuals.size());
 
-        int count = 0;
-        for(OWLNamedIndividual i:individuals) {
-            Instance currentInstance = new DenseInstance(projectionTable.numAttributes());
-            currentInstance.setDataset(projectionTable);
-            String individualName = sfp.getShortForm(i);
-            currentInstance.setValue(0, individualName);
-            int idx = 1;
-            for(OWLClass c: classes) {
-                //System.out.print(String.format("Computing %s(%s):",sfp.getShortForm(c), individualName));
-                ProjectionValue computedValue = computeProjectionValue(c, i);
-                //System.out.println(computedValue);
-                currentInstance.setValue(idx, mapValueToNumber(computedValue));
-                idx++;
+        //Get the list of individual names
+        individualNames = new ArrayList<>();
+        for(OWLNamedIndividual i: individuals) {
+            String shortName = sfp.getShortForm(i);
+            System.out.println(" -" + shortName);
+            individualNames.add(shortName);
+        }
+
+        //create the table that stores the data
+        projectionTable = ArrayTable.create(individualNames, classNames);
+        int progressCounter = 0;
+        for(OWLClass c : classes) {
+            String className = sfp.getShortForm(c);
+            progressCounter++;
+            System.out.print(String.format("(%d/%d) Reasoning on %s ", progressCounter, classes.size(), className));
+
+            Stopwatch instanceCheckTimer = Stopwatch.createStarted();
+            NodeSet<OWLNamedIndividual> trueInClass  = reasoner.getInstances(c);
+            long retrievalTime = instanceCheckTimer.stop().elapsed(TimeUnit.MILLISECONDS);
+
+            Stopwatch complementCheckTimer = Stopwatch.createStarted();
+            NodeSet<OWLNamedIndividual> falseInClass = reasoner.getInstances(c.getObjectComplementOf());
+            long complementTime = complementCheckTimer.stop().elapsed(TimeUnit.MILLISECONDS);
+
+
+            for(OWLNamedIndividual i : individuals) {
+                String individualName = sfp.getShortForm(i);
+                ProjectionValue v;
+                if(trueInClass.containsEntity(i)) {
+                    v = ProjectionValue.TRUE;
+                } else if(falseInClass.containsEntity(i)) {
+                    v = ProjectionValue.FALSE;
+                } else {
+                    v = ProjectionValue.UNCERTAIN;
+                }
+                //System.out.println(String.format("%s(%s): %s", className, individualName, v));
+                projectionTable.put(individualName, className, v);
             }
-            projectionTable.add(currentInstance);
-            System.out.println(String.format("%d/%d done.", ++count, individuals.size()));
+            System.out.println(String.format("took %3f seconds, %d ms for instance retrieval and %d ms for complement retrieval.", (retrievalTime + complementTime)/1000., retrievalTime, complementTime));
         }
+        long buildTime = buildTimer.stop().elapsed(TimeUnit.MINUTES);
+        System.out.println(String.format("Projection table built in %d minutes.", buildTime));
     }
 
-    private ProjectionValue computeProjectionValue(OWLClass c, OWLNamedIndividual i) {
-        ProjectionValue v = ProjectionValue.UNCERTAIN;
-        OWLAxiom instanceCheck = dataFactory.getOWLClassAssertionAxiom(c, i);
-        if (reasoner.isEntailed(instanceCheck)) {
-            v = ProjectionValue.TRUE;
-        } else {
-            OWLAxiom complementInstanceCheck = dataFactory.getOWLClassAssertionAxiom(c.getObjectComplementOf(), i);
-            if (reasoner.isEntailed(complementInstanceCheck)) {
-                v = ProjectionValue.FALSE;
+    public void ExportAsCSV(String path_to) throws Exception {
+        try(BufferedWriter bw = new BufferedWriter(new FileWriter(path_to))) {
+            String delimiter = ";";
+            //writes the header into the file
+            StringJoiner headerJoiner = new StringJoiner(delimiter);
+            headerJoiner.add("Name");
+            for(String columnName : classNames) {
+                headerJoiner.add(columnName);
+            }
+
+            bw.write(headerJoiner.toString());
+            bw.newLine();
+
+            //for each row...
+            for(String individualName : individualNames) {
+                StringJoiner rowJoiner = new StringJoiner(delimiter);
+                rowJoiner.add(individualName);
+                for (String className : classNames) {
+                    rowJoiner.add(projectionTable.get(individualName, className).toString());
+                }
+                bw.write(rowJoiner.toString());
+                bw.newLine();
             }
         }
-        return v;
-    }
-
-    private double mapValueToNumber(ProjectionValue value) {
-        double mapping = 0;
-        switch(value) {
-            case TRUE:
-                mapping = 1;
-                break;
-            case FALSE:
-                mapping = -1;
-                break;
-            case UNCERTAIN:
-                mapping = 0;
-                break;
-        }
-        return mapping;
-    }
-
-    public void ExportAsWekaARFF(String path_to)  throws Exception{
-            DataSink.write(path_to, projectionTable);
-    }
-
-    public void LoadWekaARFF(String path_to) throws Exception {
-        DataSource ds = new DataSource(path_to);
-        projectionTable = ds.getDataSet();
-    }
-
-    public void ComputePCA() throws Exception {
-        PrincipalComponents pca = new PrincipalComponents();
-        pca.setInputFormat(projectionTable);
-        Instances newTable = Filter.useFilter(projectionTable, pca);
-
-        System.out.println(newTable);
-
     }
 
 

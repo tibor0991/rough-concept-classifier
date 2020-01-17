@@ -3,19 +3,40 @@ package gdamato;
 import gdamato.core.RoughConceptClassifier;
 import org.semanticweb.owlapi.model.OWLOntologyCreationException;
 
+import javax.swing.*;
+import java.io.File;
+
 public class Main {
     private static RoughConceptClassifier RCC;
 
     public static void main(String[] args) {
-        System.out.println("Hello, world!");
+        System.out.println("- Projection Table Builder -");
         RCC = new RoughConceptClassifier();
-        BuildNewDataset();
 
-    }
+        String ontologyPath, csvPath;
 
-    public static void BuildNewDataset() {
+        //Utility window to choose which file to open and where should the table be saved
+        JFileChooser fileChooser = new JFileChooser();
+        int userSelection;
+
+        //Ask for the ontology path
+        fileChooser.setDialogTitle("Specify an ontology file to open.");
+        userSelection = fileChooser.showOpenDialog(null);
+        if (userSelection == JFileChooser.APPROVE_OPTION) {
+            ontologyPath = fileChooser.getSelectedFile().getAbsolutePath();
+            System.out.println("Opening ontology: " + ontologyPath);
+        } else return;
+
+        //Ask where to save the CSV file
+        fileChooser.setDialogTitle("Specify where to save the table.");
+        userSelection = fileChooser.showSaveDialog(null);
+        if (userSelection == JFileChooser.APPROVE_OPTION) {
+            csvPath = fileChooser.getSelectedFile().getAbsolutePath();
+            System.out.println("Saving table to: " + csvPath);
+        } else return;
+
         try {
-            RCC.LoadOntology("C:\\Users\\Gianf\\Dropbox\\Tesi\\Ontologie\\wine.owl");
+            RCC.LoadOntology(ontologyPath);
         } catch (OWLOntologyCreationException e) {
             e.printStackTrace();
         }
@@ -23,18 +44,11 @@ public class Main {
         RCC.BuildProjectionTable();
 
         try {
-            RCC.ExportAsWekaARFF("C:\\Users\\Gianf\\Desktop\\table.arff");
+            RCC.ExportAsCSV(csvPath);
         } catch (Exception e) {
             e.printStackTrace();
         }
-    }
 
-    public static void LoadDataSet() {
-        try {
-            RCC.LoadWekaARFF("C:\\Users\\Gianf\\Desktop\\table.arff");
-            RCC.ComputePCA();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+
     }
 }
