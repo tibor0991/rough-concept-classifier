@@ -1,17 +1,16 @@
 package gdamato;
 
-import gdamato.core.RoughConceptClassifier;
+import gdamato.core.ProjectionBuilder;
 import org.semanticweb.owlapi.model.OWLOntologyCreationException;
 
 import javax.swing.*;
-import java.io.File;
 
 public class Main {
-    private static RoughConceptClassifier RCC;
+    private static ProjectionBuilder builder;
 
     public static void main(String[] args) {
         System.out.println("- Projection Table Builder -");
-        RCC = new RoughConceptClassifier();
+        builder = new ProjectionBuilder();
 
         String ontologyPath, csvPath;
 
@@ -36,15 +35,15 @@ public class Main {
         } else return;
 
         try {
-            RCC.LoadOntology(ontologyPath);
+            builder.LoadOntology(ontologyPath);
         } catch (OWLOntologyCreationException e) {
             e.printStackTrace();
         }
 
-        RCC.BuildProjectionTable();
+        builder.BuildProjectionTable();
 
         try {
-            RCC.ExportAsCSV(csvPath);
+            builder.ExportAsCSV(csvPath);
         } catch (Exception e) {
             e.printStackTrace();
         }

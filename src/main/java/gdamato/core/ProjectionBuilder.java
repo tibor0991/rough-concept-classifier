@@ -23,7 +23,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-public class RoughConceptClassifier {
+public class ProjectionBuilder {
 
 
     //Ontology
@@ -42,7 +42,7 @@ public class RoughConceptClassifier {
 
 
 
-    public RoughConceptClassifier() {
+    public ProjectionBuilder() {
         ontMgr = OWLManager.createOWLOntologyManager();
     }
 
